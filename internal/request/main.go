@@ -2,10 +2,10 @@ package request
 
 import (
 	"errors"
+	"http-protocol/internal/headers"
 	"io"
 	"regexp"
 	"strings"
-	"http-protocol/internal/headers"
 )
 
 type Request struct {
@@ -29,55 +29,70 @@ type RequestLine struct {
 const (
 	SEPARATOR = "\r\n"
 )
-var MALFORMED_REQUEST_LINE_ERROR = errors.New("malformed request line")
 
+func newRequest() *Request {
+	return &Request{
+		Headers: headers.NewHeaders(),
+		State:   INITIAL_STATE,
+	}
+}
+
+var MALFORMED_REQUEST_LINE_ERROR = errors.New("malformed request line")
 
 func (r *Request) Parse(data []byte) (int, error) {
 	readTill := 0
-	switch r.State {
-		case INITIAL_STATE:
-			requestLine, i, err := parseRequestLine(string(data))
-			if err != nil {
-				return 0, err
-			}
-			if i==0 {
-				return 0, nil
-			}
-			r.RequestLine = requestLine
-			r.State = PARSING_HEADER
-			readTill = i
-			return i, nil
-		case PARSING_HEADER:
-			n, done, err := r.Headers.Parse(data[readTill:])
-			if err != nil {
-				return 0, err
-			}
-			if done {
-				r.State = DONE_STATE
-			}
-			readTill += n
-			return n, nil
-		case DONE_STATE:
+	if r.State == INITIAL_STATE {
+		requestLine, i, err := parseRequestLine(string(data))
+		if err != nil {
+			return 0, err
+		}
+		if i == 0 {
 			return 0, nil
+		}
+		r.RequestLine = requestLine
+		r.State = PARSING_HEADER
+		readTill = i
+	}
+
+	if r.State == PARSING_HEADER {
+		curr := data[readTill:]
+		n, done, err := r.Headers.Parse(curr)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.State = DONE_STATE
+		}
+		readTill += n
 	}
 	return readTill, nil
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	data := ""
-	b := make([]byte,4096)
-	n,err := reader.Read(b)
-	r := &Request{}
-	for err == nil && r.State != PARSING_HEADER {
-		data += string(b[:n])
-		n,err = r.Parse([]byte(data))
-		if err != nil {
-			return nil,err
+	b := make([]byte, 4096)
+	n, err := reader.Read(b)
+	readTill := 0
+	r := newRequest()
+	for {
+		if err == io.EOF {
+			err = nil
+			break
 		}
-		n,err = reader.Read(b)
+		if err != nil || r.State == DONE_STATE {
+			break
+		}
+
+		data += string(b[:n])
+		n, err = r.Parse([]byte(data[readTill:]))
+		if err != nil {
+			return nil, err
+		}
+		readTill += n
+		n, err = reader.Read(b)
 	}
 
-	return r,err
+	return r, err
 }
 
 // GET /goodies HTTP/1.1
@@ -108,8 +123,8 @@ func parseRequestLine(line string) (RequestLine, int, error) {
 	if !matched {
 		return RequestLine{}, 0, MALFORMED_REQUEST_LINE_ERROR
 	}
-	i= strings.Index(requestLineParts[2], "/")
-	version := requestLineParts[2][i+1:]
+	j := strings.Index(requestLineParts[2], "/")
+	version := requestLineParts[2][j+1:]
 
 	return RequestLine{
 		Method:        requestLineParts[0],

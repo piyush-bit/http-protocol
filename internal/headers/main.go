@@ -3,7 +3,6 @@ package headers
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -42,7 +41,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 			return i, false, INVALID_HEADER_FORMAT_ERROR
 		}
 		headerKey = strings.TrimSpace(headerKey)
-		matched, err := regexp.MatchString("^[a-zA-Z0-9 !,#$%&'*+-.^_`|~]+$", headerKey)
+		matched, err := regexp.MatchString("^[a-zA-Z0-9!,#$%&'*+-.^_`|~]+$", headerKey)
 		if err != nil {
 			return i, false, err
 		}
@@ -55,8 +54,6 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		}
 
 		// additional header parsing
-		fmt.Println("Addig Header: ", headerKey, headerValue)
-
 		if _, ok := h[strings.ToLower(headerKey)]; ok {
 			h[strings.ToLower(headerKey)] = h[strings.ToLower(headerKey)] + ", " + headerValue
 		} else {
@@ -64,8 +61,6 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		}
 		i += j + 2
 	}
-
-	
 
 	return i, false, nil
 }
