@@ -18,6 +18,13 @@ const SEPARATOR = "\r\n"
 var INVALID_HEADER_FORMAT_ERROR = errors.New("invalid header format")
 var INVALID_KEY_FORMAT_ERROR = errors.New("invalid key format")
 
+func (h Headers) Get(key string) (string, bool) {
+	if _, ok := h[strings.ToLower(key)]; !ok {
+		return "", false
+	}
+	return h[strings.ToLower(key)], true
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	i := 0
 	for {

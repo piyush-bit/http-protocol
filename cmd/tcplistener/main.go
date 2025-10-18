@@ -25,7 +25,7 @@ func main() {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("Request line:\n- Method : %s\n- Target : %s\n- Version : %s\n", r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion)
+		fmt.Printf("Request line:\n- Method : %s\n- Target : %s\n- Version : %s\nHeaders : %v\nBody : %s\n", r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion, r.Headers, r.Body)
 	}
 }
 

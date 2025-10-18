@@ -5,18 +5,21 @@ import (
 	"http-protocol/internal/headers"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	State       int
 }
 
 const (
 	INITIAL_STATE = iota
 	PARSING_HEADER
+	PARSING_BODY
 	DONE_STATE
 )
 
@@ -61,15 +64,48 @@ func (r *Request) Parse(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.State = DONE_STATE
+			r.State = PARSING_BODY
 		}
 		readTill += n
+	}
+
+	if r.State == PARSING_BODY {
+		bodyReadTill, done, err := r.ParseBody(data[readTill:])
+		if err != nil {
+			r.State = DONE_STATE
+			return 0, err
+		}
+		if done {
+			r.State = DONE_STATE
+		}
+		readTill += bodyReadTill
 	}
 	return readTill, nil
 }
 
+func (r *Request) ParseBody(data []byte) (int, bool, error) {
+	contentLength, ok := r.Headers.Get("content-length")
+	if !ok {
+		return 0, true, nil
+	}
+	contentLengthInt, err := strconv.Atoi(contentLength)
+	if err != nil {
+		return 0, false, err
+	}
+	// remaining := contentLengthInt - len(r.Body)
+	body := data
+	r.Body = append(r.Body, body...)
+	if len(r.Body) > contentLengthInt {
+		return 0, false, errors.New("body length does not match content-length")
+	}
+	if len(r.Body) == contentLengthInt {
+		return len(body), true, nil
+	}
+	return len(body), false, nil
+}
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	data := ""
+	data := []byte{}
 	b := make([]byte, 4096)
 	n, err := reader.Read(b)
 	readTill := 0
@@ -77,14 +113,17 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	for {
 		if err == io.EOF {
 			err = nil
+			if r.State != DONE_STATE {
+				return nil, errors.New("request not completed")
+			}
 			break
 		}
 		if err != nil || r.State == DONE_STATE {
 			break
 		}
 
-		data += string(b[:n])
-		n, err = r.Parse([]byte(data[readTill:]))
+		data = append(data, b[:n]...)
+		n, err = r.Parse(data[readTill:])
 		if err != nil {
 			return nil, err
 		}
