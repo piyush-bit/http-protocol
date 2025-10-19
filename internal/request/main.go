@@ -128,9 +128,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 		readTill += n
+		if r.State == DONE_STATE {
+			break
+		}
 		n, err = reader.Read(b)
 	}
-
 	return r, err
 }
 
