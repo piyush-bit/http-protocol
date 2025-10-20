@@ -19,7 +19,7 @@ type HandlerError struct {
 	Message    string
 }
 
-type Handler func(w io.Writer, req *request.Request) *HandlerError
+type Handler func(r *response.Writer, req *request.Request) *HandlerError
 
 func handleConnections(listener net.Listener, handler Handler) {
 	for {
@@ -38,22 +38,35 @@ func handleConnection(conn net.Conn, handler Handler) {
 		return
 	}
 	var bytebuffer bytes.Buffer
-	handlerError := handler(&bytebuffer, req)
+	writer := &response.Writer{
+		Body:       bytebuffer.Bytes(),
+		Headers:    response.GetDefaultHeaders(0),
+		StatusCode: response.OK,
+	}
+	handlerError := handler(writer, req)
 	if handlerError != nil {
-		HandlerErrorHandler(conn, handlerError)
+		writeResponse(conn, &response.Writer{
+			StatusCode: response.StatusCode(handlerError.StatusCode),
+			Headers:    response.GetDefaultHeaders(len(handlerError.Message)),
+			Body:       []byte(handlerError.Message),
+		})
 		return
 	}
-	err = response.WriteStatusLine(conn, response.OK)
+	writeResponse(conn, writer)
+}
+
+func writeResponse(w io.Writer, writer *response.Writer) {
+	err := response.WriteStatusLine(w, response.StatusCode(writer.StatusCode))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	err = response.WriteHeaders(conn, response.GetDefaultHeaders(len(bytebuffer.Bytes())))
+	err = response.WriteHeaders(w, writer.Headers)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	_, err = conn.Write(bytebuffer.Bytes())
+	_, err = w.Write(writer.Body)
 	if err != nil {
 		fmt.Println(err)
 		return

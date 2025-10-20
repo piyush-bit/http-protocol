@@ -1,10 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"http-protocol/internal/request"
+	"http-protocol/internal/response"
 	"http-protocol/internal/server"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -13,20 +12,30 @@ import (
 
 const port = 42069
 
-func handler(w io.Writer, r *request.Request) *server.HandlerError {
+func handler(w *response.Writer, r *request.Request) *server.HandlerError {
 	switch r.RequestLine.RequestTarget {
 	case "/yourproblem":
-		return &server.HandlerError{
-			StatusCode: 400,
-			Message:    "Your problem is not my problem\n",
-		}
+		w.WriteBody([]byte("<html><head><title>400 Bad Request</title></head><body><h1>Bad Request</h1><p>Your request honestly kinda sucked.</p></body></html>"))
+		w.WriteHeader("Content-Type", "text/html")
+		w.WriteStatusLine(response.BAD_REQUEST)
+		return nil
 	case "/myproblem":
-		return &server.HandlerError{
-			StatusCode: 500,
-			Message:    "Woopsie, my bad\n",
-		}
+		w.WriteBody([]byte(`<html>
+  <head>
+    <title>500 Internal Server Error</title>
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>Okay, you know what? This one is on me.</p>
+  </body>
+</html>`))
+		w.WriteHeader("Content-Type", "text/html")
+		w.WriteStatusLine(response.INTERNAL_SERVER_ERROR)
+		return nil
 	default:
-		fmt.Fprintf(w, "All good, frfr\n")
+		w.WriteBody([]byte("<html><head><title>200 OK</title></head><body><h1>Success!</h1><p>Your request was an absolute banger.</p></body></html>"))
+		w.WriteHeader("Content-Type", "text/html")
+		w.WriteStatusLine(response.OK)
 		return nil
 	}
 }

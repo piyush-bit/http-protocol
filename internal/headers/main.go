@@ -25,6 +25,12 @@ func (h Headers) Get(key string) (string, bool) {
 	return h[strings.ToLower(key)], true
 }
 
+func (h Headers) Put(headers Headers) {
+	for key, value := range headers {
+		h[strings.ToLower(key)] = value
+	}
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	i := 0
 	for {
