@@ -1,19 +1,43 @@
 package response
 
 import (
+	"errors"
 	"fmt"
 	"http-protocol/internal/headers"
 	"io"
 )
 
+var DOUBLE_WRITE_ERROR = errors.New("Can't write respoonse twice , use chunked response")
+var CHUNKED_BODY_ENDED_ERROR = errors.New("Can't write chunked body after ended")
+
 type Writer struct {
 	StatusCode StatusCode
 	Headers    headers.Headers
-	Body       []byte
+	Writer     io.Writer
+	State      int
+}
+
+const (	
+	INITIAL_STATE = iota
+	WRITING_CHUNKED_BODY
+	DONE_STATE
+)
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{
+		Writer: w,
+		Headers: headers.NewHeaders(),
+		State: INITIAL_STATE,
+	}
 }
 
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	w.StatusCode = statusCode
+	return nil
+}
+
+func (w *Writer) DeleteHeader(key string) error {
+	delete(w.Headers, key)
 	return nil
 }
 
@@ -29,10 +53,60 @@ func (w *Writer) WriteHeader(key string, value string) error {
 	return nil
 }
 
-func (w *Writer) WriteBody(p []byte) (int, error){
-	w.Body = append(w.Body, p...)
-	w.WriteHeader("Content-Length", fmt.Sprintf("%d", len(w.Body)))
-	return len(p), nil
+func (w *Writer) WriteBody(p []byte) (int, error) {
+	if w.State == DONE_STATE {
+		return 0, DOUBLE_WRITE_ERROR
+	}
+	w.State = DONE_STATE
+	err := WriteStatusLine(w.Writer, w.StatusCode)
+	if err != nil {
+		return 0, err
+	}
+	w.Headers.Put(GetDefaultHeaders(len(p)))
+	err = WriteHeaders(w.Writer, w.Headers)
+	if err != nil {
+		return 0, err
+	}
+	return w.Writer.Write(p)
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.State == DONE_STATE {
+		return 0 , CHUNKED_BODY_ENDED_ERROR
+	}
+	if w.State == INITIAL_STATE{
+		w.State = WRITING_CHUNKED_BODY
+		err := WriteStatusLine(w.Writer, w.StatusCode)
+		if err != nil {
+			return 0, err
+		}
+		w.Headers.Put(GetDefaultHeaders(len(p)))
+		w.WriteHeader("Transfer-Encoding", "chunked")
+		w.DeleteHeader("Content-Length")
+		err = WriteHeaders(w.Writer, w.Headers)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if w.State == WRITING_CHUNKED_BODY{
+		size := len(p)
+		w.Writer.Write([]byte(fmt.Sprintf("%x\r\n", size)))
+		w.Writer.Write(p)
+		w.Writer.Write([]byte("\r\n"))
+	}
+	return 0, nil
+}
+	
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	if w.State == DONE_STATE {
+		return 0 , CHUNKED_BODY_ENDED_ERROR
+	}
+	if w.State == WRITING_CHUNKED_BODY{
+		w.Writer.Write([]byte("0\r\n\r\n"))
+		w.State = DONE_STATE
+	}
+	return 0, nil
 }
 
 type StatusCode int
