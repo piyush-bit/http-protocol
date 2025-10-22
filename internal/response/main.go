@@ -20,6 +20,7 @@ type Writer struct {
 const (	
 	INITIAL_STATE = iota
 	WRITING_CHUNKED_BODY
+	WRITING_TRAILERS
 	DONE_STATE
 )
 
@@ -90,11 +91,23 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	}
 	if w.State == WRITING_CHUNKED_BODY{
 		size := len(p)
-		w.Writer.Write([]byte(fmt.Sprintf("%x\r\n", size)))
+		fmt.Fprintf(w.Writer,"%x\r\n", size)
 		w.Writer.Write(p)
-		w.Writer.Write([]byte("\r\n"))
+		fmt.Fprint(w.Writer,"\r\n")
 	}
 	return 0, nil
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error{
+	if w.State == WRITING_TRAILERS{
+		for header, value := range h {
+			fmt.Fprintf(w.Writer,"%s: %s\r\n", header, value)
+		}
+		fmt.Fprint(w.Writer,"\r\n")
+		w.State = DONE_STATE
+		return nil
+	}
+	return errors.New("Trailers not supported")
 }
 	
 
@@ -103,8 +116,13 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 		return 0 , CHUNKED_BODY_ENDED_ERROR
 	}
 	if w.State == WRITING_CHUNKED_BODY{
-		w.Writer.Write([]byte("0\r\n\r\n"))
-		w.State = DONE_STATE
+		fmt.Fprint(w.Writer,"0\r\n")
+		if _, ok := w.Headers.Get("Trailer"); !ok {
+			fmt.Fprint(w.Writer,"\r\n")
+			w.State = DONE_STATE
+		}else{
+			w.State = WRITING_TRAILERS
+		}
 	}
 	return 0, nil
 }

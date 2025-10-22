@@ -1,15 +1,19 @@
 package main
 
 import (
+	"fmt"
+	"http-protocol/internal/headers"
 	"http-protocol/internal/request"
 	"http-protocol/internal/response"
 	"http-protocol/internal/server"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"crypto/sha256"
 )
 
 const port = 42069
@@ -59,17 +63,30 @@ func handleProxy(w *response.Writer, r *request.Request) *server.HandlerError {
 	w.WriteStatusLine(response.OK)
 	w.WriteHeaders(response.GetDefaultHeaders(0))
 	w.WriteHeader("Transfer-Encoding", "chunked")
+	w.WriteHeader("Trailer", "X-Content-SHA256, X-Content-Length")
 	w.DeleteHeader("Content-Length")
 
-	buffer := make([]byte, 32)
+	buffer := make([]byte, 8)
+	data := make([]byte, 0)
 	for {
 		n, err := resp.Body.Read(buffer)
-		if err != nil {
+		if n > 0 {
+			w.WriteChunkedBody(buffer[:n])
+			data = append(data, buffer[:n]...)
+		}
+		if err == io.EOF {
 			break
 		}
-		w.WriteChunkedBody(buffer[:n])
+		if err != nil {
+			log.Printf("Error reading from proxied request body: %v", err)
+			break
+		}
 	}
 	w.WriteChunkedBodyDone()
+	w.WriteTrailers(headers.Headers{
+		"X-Content-SHA256": fmt.Sprintf("%x", sha256.Sum256(data)),
+		"X-Content-Length": fmt.Sprintf("%d", len(data)),
+	})
 	return nil
 }
 
