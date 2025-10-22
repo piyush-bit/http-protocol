@@ -42,6 +42,15 @@ func handler(w *response.Writer, r *request.Request) *server.HandlerError {
 								</body>
 								</html>`))
 		return nil
+	case "/video":
+		if r.RequestLine.Method == "GET" {
+			w.WriteHeader("Content-Type", "video/mp4")
+			return sendVideo(w)
+		}
+		return &server.HandlerError{
+			StatusCode: int(response.BAD_REQUEST),
+			Message:    "Bad Request",
+		}
 	default:
 		w.WriteHeader("Content-Type", "text/html")
 		w.WriteStatusLine(response.OK)
@@ -79,6 +88,44 @@ func handleProxy(w *response.Writer, r *request.Request) *server.HandlerError {
 		}
 		if err != nil {
 			log.Printf("Error reading from proxied request body: %v", err)
+			break
+		}
+	}
+	w.WriteChunkedBodyDone()
+	w.WriteTrailers(headers.Headers{
+		"X-Content-SHA256": fmt.Sprintf("%x", sha256.Sum256(data)),
+		"X-Content-Length": fmt.Sprintf("%d", len(data)),
+	})
+	return nil
+}
+
+func sendVideo(w *response.Writer) *server.HandlerError {
+	f, err := os.Open("assets/vim.mp4")
+	if err != nil {
+		return &server.HandlerError{
+			StatusCode: int(response.INTERNAL_SERVER_ERROR),
+			Message:    "Internal Server Error",
+		}
+	}
+	defer f.Close()
+	w.WriteStatusLine(response.OK)
+	w.WriteHeaders(response.GetDefaultHeaders(0))
+	w.WriteHeader("Transfer-Encoding", "chunked")
+	w.WriteHeader("Trailer", "X-Content-SHA256, X-Content-Length")
+	w.DeleteHeader("Content-Length")
+	buffer := make([]byte, 8)
+	data := make([]byte, 0)
+	for {
+		n, err := f.Read(buffer)
+		if n > 0 {
+			w.WriteChunkedBody(buffer[:n])
+			data = append(data, buffer[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Printf("Error reading from video file: %v", err)
 			break
 		}
 	}
